@@ -1,6 +1,7 @@
 //create NPM package
  var mysql = require('mysql');
  var prompt = require('prompt');
+ var inquirer = require('inquirer');
 
 // connect to mysql database
 var connection = mysql.createConnection({
@@ -8,7 +9,7 @@ var connection = mysql.createConnection({
     port: 3306,
     user: "root", //Your username
     password: "4742Cire", //Your password
-    database: "bamazon_db"
+    database: "bamazon"
 })
 
 connection.connect();
