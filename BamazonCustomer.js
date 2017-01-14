@@ -1,73 +1,108 @@
 //create NPM package
- var mysql = require('mysql');
- var prompt = require('prompt');
- var inquirer = require('inquirer');
+var inquirer = require("inquirer");
+var mysql = require("mysql");
+var Table = require("cli-table");
 
-// connect to mysql database
 var connection = mysql.createConnection({
-    host: "localhost",
-    port: 3306,
-    user: "root", //Your username
-    password: "4742Cire", //Your password
-    database: "bamazon"
-})
-
-connection.connect();
-//database query, customer view, which shows ItemID, ProductName, and Price
-connection.query('SELECT * FROM Products', function(err, results) {
-  if (err) throw err;
- 
-  for (var i = 0; i < results.length; i++) {
-    console.log('Product ID: ', results[i].ItemID);
-    console.log('Product Name: ', results[i].ProductName);
-    console.log('Price: ', + '$' results[i].Price);
-    console.log("----------------------------------------------------");
-  }
-  customerPurchase(); //customerPurchase function callback
+  host: "localhost",
+  port: 3306,
+  user: "root",
+  password: "4742Cire",
+  database: "bamazon"
 });
 
-function customerPurchase(){
-  var productInfo = {
-    properties: {
-      ItemID: {description: 'Please choose the item you would like to purchase by inputting the item ID'},
-      Quantity: {description: 'How many would you like to purchase at this time?'}
-    },
-  };
+connection.connect(function(err) {
+  if (err) throw err;
+  console.log("connected as " + connection.threadId);
+  displayItems();
+});
+//displays all items in bamazon.products as cli-table
+function displayItems() {
+	connection.query("SELECT * FROM products", function(error, response) {
+		if (error) throw error;
+		//create new table to push product info into
+		var itemsTable = new Table({
+			head: ["Item ID", "Product Name", "Price"]
+		});
+		//loop through response and push each items info into table
+		for (var i = 0; i < response.length; i++) {
+			itemsTable.push([response[i].item_id, response[i].product_name, "$ "+response[i].price]);
+		}
+		//display table
+		console.log(itemsTable.toString());
+		customer();
+	})
+}
 
+function customer() {
+	inquirer.prompt([
+		{
+			name: "productId",
+			message: "Enter the ID of the product you would like to buy.",
+			type: "input",
+			validate: function(value) {
+		      if (isNaN(value) === false) {
+		        return true;
+		      }
+		      return false;
+		    }
+		},
+		{
+			name: "quantity",
+			message: "How many would you like to buy?",
+			type: "input",
+			validate: function(value) {
+      		if (isNaN(value) === false) {
+		        return true;
+		      }
+		      return false;
+		    }
+		}
 
-//create a prompt for the input
+	]).then(function(input) {
 
-prompt.start();
-    prompt.get(productInfo, function (err, res){
-      var purchase = {
-        ItemID: res.ItemID,
-        Quantity: res.Quantity
-      };
+		connection.query("SELECT * FROM products WHERE ?", {item_id: input.productId}, function(error, response) {
+			if (error) throw error;
 
+			if (parseInt(input.quantity) <= response[0].stock_quantity) {
+				var orderCost = (parseInt(input.quantity) * response[0].price).toFixed(2);
+				console.log("Your total is $ " + orderCost);
+				fulfillOrder(response[0].item_id, response[0].stock_quantity, parseInt(input.quantity));
+			} else {
+				console.log("Sorry, we only have " + response[0].stock_quantity + " units left. We can't fulfill your order.");
+				keepShopping();
+			}
+		})
+	});
+}
 
-//
+function fulfillOrder(itemId, currentQuantity, quantityPurchased) {
+	connection.query("UPDATE products SET ? WHERE ?", [{
+		stock_quantity: currentQuantity - quantityPurchased
+	}, {
+		item_id: itemId
+	}], function(error, response) {
+		if (error) throw error;
 
-//push users purchase to query Products table
-  customerOrder.push(purchase);
-      //connections used to query different MySQL views/commands
-      //this query takes the order info
-      connection.query('SELECT * FROM Products WHERE ItemID=?', customerOrder[0].ItemID, function(err, res){
-        if (res[0].StockQuantity >= customerOrder[0].Quantity) {
-          
-          console.log('Your total comes to: '+ (customerOrder[0].Quantity*res[0].Price));
-         
-          stockLeft = res[0].StockQuantity - customerOrder[0].Quantity;
+		console.log("Order complete. Thank you for shoppign with Bamazon.");
+		keepShopping();
+	})
+}
 
-          // Stock Quantity 
-          connection.query('UPDATE Products SET StockQuantity ='+ stockLeft + ' WHERE ItemID ='+ customerOrder[0].ItemID, function(err, res){
-           
-            console.log("Your order has been processed. Thank you for shopping Bamazon!");
-            connection.end();
-          });
-        } else {
-          console.log("We are currently out of stock. Please check back soon!");
-          connection.end();
-        }
-      });
-    })
-}        
+function keepShopping() {
+	inquirer.prompt({
+		name: "keepShopping",
+		message: "Would you like to make another purchase?",
+		type: "list",
+		choices: ["Yes", "No"]
+
+	}).then(function(input) {
+
+		if (input.keepShopping === "Yes") {
+			displayItems();
+		} else {
+			console.log("Come back soon!");
+			connection.end();
+		}
+	})
+}
